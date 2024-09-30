@@ -120,48 +120,67 @@ export default function TextConverter() {
       alert('Por favor, seleccione al menos dos audios para combinar')
       return
     }
-
+  
     setIsCombining(true)
-
+  
     try {
       const audioBuffers = await Promise.all(selectedAudios.map(async (file) => {
         const response = await fetch(file.url)
         const arrayBuffer = await response.arrayBuffer()
         return await audioContext.current.decodeAudioData(arrayBuffer)
       }))
-
-      const totalLength = audioBuffers.reduce((sum, buffer) => sum + buffer.duration, 0) + (audioBuffers.length - 1) * 0.5
-      const combinedBuffer = audioContext.current.createBuffer(1, audioContext.current.sampleRate * totalLength, audioContext.current.sampleRate)
+  
+      const gapDuration = 0.9 // 0.9 seconds gap
+      const gapSamples = Math.round(gapDuration * audioContext.current.sampleRate)
+  
+      const totalSamples = audioBuffers.reduce((sum, buffer) => {
+        return sum + buffer.length + gapSamples
+      }, 0) - gapSamples // Subtract the last gap
+  
+      const combinedBuffer = audioContext.current.createBuffer(
+        1,
+        totalSamples,
+        audioContext.current.sampleRate
+      )
+  
       const channelData = combinedBuffer.getChannelData(0)
-
+  
       let offset = 0
       audioBuffers.forEach((buffer, index) => {
-        channelData.set(buffer.getChannelData(0), offset * audioContext.current.sampleRate)
-        offset += buffer.duration + (index < audioBuffers.length - 1 ? 0.5 : 0)
+        channelData.set(buffer.getChannelData(0), offset)
+        offset += buffer.length
+  
+        // Add gap after each audio except the last one
+        if (index < audioBuffers.length - 1) {
+          for (let i = 0; i < gapSamples; i++) {
+            channelData[offset + i] = 0
+          }
+          offset += gapSamples
+        }
       })
-
+  
       const blob = await new Promise(resolve => {
         const mediaStreamSource = audioContext.current.createMediaStreamDestination()
         const sourceNode = audioContext.current.createBufferSource()
         sourceNode.buffer = combinedBuffer
         sourceNode.connect(mediaStreamSource)
         sourceNode.start(0)
-
+  
         const mediaRecorder = new MediaRecorder(mediaStreamSource.stream)
         const chunks = []
-
+  
         mediaRecorder.ondataavailable = (e) => chunks.push(e.data)
         mediaRecorder.onstop = () => resolve(new Blob(chunks, { type: 'audio/mp3' }))
-
+  
         mediaRecorder.start()
         sourceNode.onended = () => mediaRecorder.stop()
       })
-
+  
       const url = URL.createObjectURL(blob)
       const newAudioFile = { url, name: `combined_audio_${Date.now()}.mp3` }
       setAudioFiles(prev => [...prev, newAudioFile])
       setSelectedAudios([])
-
+  
       new Audio(url).play()
     } catch (error) {
       console.error('Error combining audios:', error)
