@@ -124,7 +124,7 @@ export default function TextConverter() {
         return await audioContext.current.decodeAudioData(arrayBuffer)
       }))
   
-      const gapDuration = 0.9 // 0.9 seconds gap
+      const gapDuration = 0.8 // 0.8 seconds gap
       const gapSamples = Math.round(gapDuration * audioContext.current.sampleRate)
   
       const totalSamples = audioBuffers.reduce((sum, buffer) => {
