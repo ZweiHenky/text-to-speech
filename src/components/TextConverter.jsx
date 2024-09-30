@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
+import { Mic, Download, Trash2, Play, Pause } from 'lucide-react'
 
 export default function TextConverter() {
   const [text, setText] = useState('')
@@ -8,9 +9,10 @@ export default function TextConverter() {
   const [selectedVoice, setSelectedVoice] = useState('')
   const [isConvertLoading, setIsConvertLoading] = useState(false)
   const [audioFiles, setAudioFiles] = useState([])
-  const [selectedAudios, setSelectedAudios] = useState([])
   const [isCombining, setIsCombining] = useState(false)
+  const [currentlyPlaying, setCurrentlyPlaying] = useState(null)
   const audioContext = useRef(null)
+  const audioRef = useRef(new Audio())
 
   useEffect(() => {
     getVoices()
@@ -94,7 +96,7 @@ export default function TextConverter() {
         console.log("Datos de audio recibidos. Tamaño:", result.size)
         const audio = new Audio(result.url)
         audio.play()
-        setAudioFiles(prev => [...prev, { url: result.url, name: `audio_${Date.now()}.mp3` }])
+        setAudioFiles(prev => [...prev, { url: result.url, name: `Audio_${prev.length + 1}` }])
       } else {
         console.log("Respuesta inesperada:", result)
         alert('No se pudo generar el audio')
@@ -107,24 +109,16 @@ export default function TextConverter() {
     }
   }
 
-  const toggleAudioSelection = (audioFile) => {
-    setSelectedAudios(prev => 
-      prev.includes(audioFile)
-        ? prev.filter(a => a !== audioFile)
-        : [...prev, audioFile]
-    )
-  }
-
   const combineAudios = async () => {
-    if (selectedAudios.length < 2) {
-      alert('Por favor, seleccione al menos dos audios para combinar')
+    if (audioFiles.length < 2) {
+      alert('Por favor, genere al menos dos audios para combinar')
       return
     }
   
     setIsCombining(true)
   
     try {
-      const audioBuffers = await Promise.all(selectedAudios.map(async (file) => {
+      const audioBuffers = await Promise.all(audioFiles.map(async (file) => {
         const response = await fetch(file.url)
         const arrayBuffer = await response.arrayBuffer()
         return await audioContext.current.decodeAudioData(arrayBuffer)
@@ -177,9 +171,8 @@ export default function TextConverter() {
       })
   
       const url = URL.createObjectURL(blob)
-      const newAudioFile = { url, name: `combined_audio_${Date.now()}.mp3` }
+      const newAudioFile = { url, name: `Combinado_${audioFiles.length + 1}` }
       setAudioFiles(prev => [...prev, newAudioFile])
-      setSelectedAudios([])
   
       new Audio(url).play()
     } catch (error) {
@@ -192,11 +185,24 @@ export default function TextConverter() {
 
   const deleteAudio = (audioToDelete) => {
     setAudioFiles(prev => prev.filter(audio => audio !== audioToDelete))
-    setSelectedAudios(prev => prev.filter(audio => audio !== audioToDelete))
+    if (currentlyPlaying === audioToDelete) {
+      audioRef.current.pause()
+      setCurrentlyPlaying(null)
+    }
   }
 
-  const playAudio = (audioUrl) => {
-    new Audio(audioUrl).play()
+  const togglePlayAudio = (audioFile) => {
+    if (currentlyPlaying === audioFile) {
+      audioRef.current.pause()
+      setCurrentlyPlaying(null)
+    } else {
+      if (currentlyPlaying) {
+        audioRef.current.pause()
+      }
+      audioRef.current = new Audio(audioFile.url)
+      audioRef.current.play()
+      setCurrentlyPlaying(audioFile)
+    }
   }
 
   const downloadAudio = (audioFile) => {
@@ -209,9 +215,9 @@ export default function TextConverter() {
   }
 
   return (
-    <div className="container mx-auto p-4 max-w-4xl">
+    <div className="container mx-auto px-4 py-8 max-w-md">
       <textarea
-        className="w-full p-2 border rounded mb-4 resize-y"
+        className="w-full p-3 border rounded-lg mb-4 resize-y text-sm"
         value={text}
         onChange={(e) => setText(e.target.value)}
         placeholder="Ingrese el texto aquí"
@@ -219,7 +225,7 @@ export default function TextConverter() {
       />
       <div className="mb-4">
         <select
-          className="w-full p-2 border rounded"
+          className="w-full p-3 border rounded-lg text-sm"
           value={selectedVoice}
           onChange={(e) => setSelectedVoice(e.target.value)}
         >
@@ -232,53 +238,63 @@ export default function TextConverter() {
         </select>
       </div>
       <button 
-        className={`w-full p-2 rounded text-white mb-4 ${isConvertLoading ? 'bg-gray-400' : 'bg-blue-500 hover:bg-blue-600'}`}
+        className={`w-full p-3 rounded-lg text-white mb-6 flex items-center justify-center text-sm ${isConvertLoading ? 'bg-gray-400' : 'bg-blue-500 active:bg-blue-600'}`}
         onClick={handleTextToVoice}
         disabled={isConvertLoading}
       >
+        <Mic className="mr-2" size={18} />
         {isConvertLoading ? 'Convirtiendo...' : 'Convertir'}
       </button>
-      <h2 className="text-xl font-bold mb-2">Audios guardados:</h2>
-      <ul className="space-y-2 mb-4">
+      <h2 className="text-lg font-bold mb-3">Audios guardados:</h2>
+      <ul className="space-y-3 mb-6">
         {audioFiles.map((file, index) => (
-          <li key={index} className="flex items-center justify-between p-2 border rounded">
-            <div className="flex items-center flex-grow">
-              <input
-                type="checkbox"
-                checked={selectedAudios.includes(file)}
-                onChange={() => toggleAudioSelection(file)}
-                className="mr-2"
-              />
-              <span 
-                className="cursor-pointer hover:text-blue-600 flex-grow"
-                onClick={() => playAudio(file.url)}
-              >
-                {file.name}
-              </span>
-            </div>
-            <div className="flex items-center">
-              <button 
-                onClick={() => downloadAudio(file)}
-                className="mr-2 px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600"
-              >
-                Descargar
-              </button>
-              <button 
-                onClick={() => deleteAudio(file)}
-                className="px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600"
-              >
-                Borrar
-              </button>
+          <li key={index} className="bg-white shadow rounded-lg overflow-hidden">
+            <div 
+              className="flex items-center justify-between p-3 cursor-pointer"
+              onClick={() => togglePlayAudio(file)}
+            >
+              <div className="flex items-center space-x-2 flex-grow">
+                {currentlyPlaying === file ? (
+                  <Pause size={18} className="text-blue-500" />
+                ) : (
+                  <Play size={18} className="text-gray-500" />
+                )}
+                <span className="text-xs truncate flex-grow">
+                  {file.name}
+                </span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    downloadAudio(file);
+                  }}
+                  className="p-2 text-green-500 rounded-full hover:bg-green-100"
+                  aria-label="Download"
+                >
+                  <Download size={18} />
+                </button>
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deleteAudio(file);
+                  }}
+                  className="p-2 text-red-500 rounded-full hover:bg-red-100"
+                  aria-label="Delete"
+                >
+                  <Trash2 size={18} />
+                </button>
+              </div>
             </div>
           </li>
         ))}
       </ul>
       <button 
-        className={`w-full p-2 rounded text-white ${isCombining || selectedAudios.length < 2 ? 'bg-gray-400' : 'bg-purple-500 hover:bg-purple-600'}`}
+        className={`w-full p-3 rounded-lg text-white text-sm ${isCombining || audioFiles.length < 2 ? 'bg-gray-400' : 'bg-purple-500 active:bg-purple-600'}`}
         onClick={combineAudios}
-        disabled={isCombining || selectedAudios.length < 2}
+        disabled={isCombining || audioFiles.length < 2}
       >
-        {isCombining ? 'Combinando...' : 'Combinar Audios Seleccionados'}
+        {isCombining ? 'Combinando...' : 'Combinar Audios'}
       </button>
     </div>
   )
