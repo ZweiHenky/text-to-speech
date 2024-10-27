@@ -11,6 +11,7 @@ export default function TextConverter() {
   const [audioFiles, setAudioFiles] = useState([])
   const [isCombining, setIsCombining] = useState(false)
   const [currentlyPlaying, setCurrentlyPlaying] = useState(null)
+  const [playbackSpeed, setPlaybackSpeed] = useState(1)
   const audioContext = useRef(null)
   const audioRef = useRef(new Audio())
 
@@ -18,6 +19,12 @@ export default function TextConverter() {
     getVoices()
     audioContext.current = new (window.AudioContext || window.webkitAudioContext)()
   }, [])
+
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.playbackRate = playbackSpeed
+    }
+  }, [playbackSpeed])
 
   const getVoices = async () => {
     const url = 'https://api.cartesia.ai/voices'
@@ -95,6 +102,7 @@ export default function TextConverter() {
       if (result && result.url) {
         console.log("Datos de audio recibidos. Tamaño:", result.size)
         const audio = new Audio(result.url)
+        audio.playbackRate = playbackSpeed
         audio.play()
         setAudioFiles(prev => [...prev, { url: result.url, name: `Audio_${prev.length + 1}` }])
       } else {
@@ -174,7 +182,9 @@ export default function TextConverter() {
       const newAudioFile = { url, name: `Combinado_${audioFiles.length + 1}` }
       setAudioFiles(prev => [...prev, newAudioFile])
   
-      new Audio(url).play()
+      const audio = new Audio(url)
+      audio.playbackRate = playbackSpeed
+      audio.play()
     } catch (error) {
       console.error('Error combining audios:', error)
       alert('Ocurrió un error al combinar los audios')
@@ -200,6 +210,7 @@ export default function TextConverter() {
         audioRef.current.pause()
       }
       audioRef.current = new Audio(audioFile.url)
+      audioRef.current.playbackRate = playbackSpeed
       audioRef.current.play()
       setCurrentlyPlaying(audioFile)
     }
@@ -212,6 +223,14 @@ export default function TextConverter() {
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
+  }
+
+  const handleSpeedChange = (e) => {
+    const newSpeed = parseFloat(e.target.value)
+    setPlaybackSpeed(newSpeed)
+    if (audioRef.current && !audioRef.current.paused) {
+      audioRef.current.playbackRate = newSpeed
+    }
   }
 
   return (
@@ -245,6 +264,21 @@ export default function TextConverter() {
         <Mic className="mr-2" size={18} />
         {isConvertLoading ? 'Convirtiendo...' : 'Convertir'}
       </button>
+      <div className="mb-4">
+        <label htmlFor="speed-control" className="block text-sm font-medium text-gray-700 mb-1">
+          Velocidad de reproducción: {playbackSpeed.toFixed(1)}x
+        </label>
+        <input
+          type="range"
+          id="speed-control"
+          min="0.5"
+          max="2"
+          step="0.1"
+          value={playbackSpeed}
+          onChange={handleSpeedChange}
+          className="w-full"
+        />
+      </div>
       <h2 className="text-lg font-bold mb-3">Audios guardados:</h2>
       <ul className="space-y-3 mb-6">
         {audioFiles.map((file, index) => (
