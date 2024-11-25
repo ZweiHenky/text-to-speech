@@ -1,19 +1,32 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
-import { Mic, Download, Trash2, Play, Pause } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { InfoIcon, Trash2, Download, Play, Pause } from 'lucide-react'
 
-export default function TextConverter() {
-  const [text, setText] = useState('')
+import { Button } from "../components/ui/button"
+import { Input } from "../components/ui/input"
+import { Label } from "../components/ui/label"
+import { Textarea } from "../components/ui/textarea"
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "../components/ui/card"
+import { Alert, AlertDescription, AlertTitle } from "../components/ui/alert"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select"
+import { Slider } from "../components/ui/slider"
+
+
+
+export default function Component() {
+  const [participants, setParticipants] = useState(2)
+  const [conversation, setConversation] = useState('')
   const [voices, setVoices] = useState([])
-  const [selectedVoice, setSelectedVoice] = useState('')
-  const [isConvertLoading, setIsConvertLoading] = useState(false)
+  const [selectedVoices, setSelectedVoices] = useState([])
   const [audioFiles, setAudioFiles] = useState([])
+  const [isConvertLoading, setIsConvertLoading] = useState(false)
   const [isCombining, setIsCombining] = useState(false)
   const [currentlyPlaying, setCurrentlyPlaying] = useState(null)
   const [playbackSpeed, setPlaybackSpeed] = useState(1)
+  const textareaRef = useRef(null)
+  const audioRef = useRef(null)
   const audioContext = useRef(null)
-  const audioRef = useRef(new Audio())
 
   useEffect(() => {
     getVoices()
@@ -21,10 +34,8 @@ export default function TextConverter() {
   }, [])
 
   useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.playbackRate = playbackSpeed
-    }
-  }, [playbackSpeed])
+    setSelectedVoices(Array(participants).fill(''))
+  }, [participants])
 
   const getVoices = async () => {
     const url = 'https://api.cartesia.ai/voices'
@@ -40,13 +51,47 @@ export default function TextConverter() {
       const response = await fetch(url, options)
       const data = await response.json()
       setVoices(data)
-      if (data.length > 0) {
-        setSelectedVoice(data[0].id)
-      }
     } catch (error) {
       console.error('Error fetching voices:', error)
       alert('No se pudieron cargar las voces disponibles')
     }
+  }
+
+  const handleParticipantsChange = (event) => {
+    const value = parseInt(event.target.value)
+    setParticipants(isNaN(value) ? 0 : Math.max(0, value))
+  }
+
+  const handleConversationChange = (event) => {
+    setConversation(event.target.value)
+  }
+
+  const clearConversation = () => {
+    setConversation('')
+    setAudioFiles([])
+  }
+
+  const formatConversation = () => {
+    if (textareaRef.current) {
+      const lines = textareaRef.current.value.split('\n')
+      const formattedLines = lines.map((line, index) => {
+        const match = line.match(/^(\d+):/)
+        if (!match) {
+          const speakerNumber = (index % participants) + 1
+          return `${speakerNumber}: ${line}`
+        }
+        return line
+      })
+      setConversation(formattedLines.join('\n'))
+    }
+  }
+
+  const handleVoiceChange = (value, index) => {
+    setSelectedVoices(prev => {
+      const newVoices = [...prev]
+      newVoices[index] = value
+      return newVoices
+    })
   }
 
   const textToVoice = async (voice, text) => {
@@ -86,72 +131,99 @@ export default function TextConverter() {
     }
   }
 
-  const handleTextToVoice = async () => {
-    if (!text.trim()) {
-      alert('Por favor, ingrese algún texto')
-      return
+  const handleTextToVoiceConversion = async () => {
+    const lines = conversation.split('\n')
+    const newAudioFiles = []
+
+    for (const line of lines) {
+      const match = line.match(/^(\d+):(.*)/)
+      if (match) {
+        const [, speakerNumber, text] = match
+        const speakerIndex = parseInt(speakerNumber) - 1
+        const selectedVoice = selectedVoices[speakerIndex]
+
+        if (!selectedVoice) {
+          throw new Error(`Por favor, seleccione una voz para el participante ${speakerNumber}`)
+        }
+
+        const result = await textToVoice(selectedVoice, text.trim())
+        if (result && result.url) {
+          newAudioFiles.push({ url: result.url, name: `Audio_${speakerNumber}` })
+        }
+      }
     }
-    if (!selectedVoice) {
-      alert('Por favor, seleccione una voz')
+
+    return newAudioFiles
+  }
+
+  const handleTextToVoice = async () => {
+    if (!conversation.trim()) {
+      alert('Por favor, ingrese algún texto en la conversación')
       return
     }
 
     setIsConvertLoading(true)
     try {
-      const result = await textToVoice(selectedVoice, text)
-      if (result && result.url) {
-        console.log("Datos de audio recibidos. Tamaño:", result.size)
-        const audio = new Audio(result.url)
-        audio.playbackRate = playbackSpeed
-        audio.play()
-        setAudioFiles(prev => [...prev, { url: result.url, name: `Audio_${prev.length + 1}` }])
-      } else {
-        console.log("Respuesta inesperada:", result)
-        alert('No se pudo generar el audio')
-      }
+      const newAudioFiles = await handleTextToVoiceConversion()
+      setAudioFiles(newAudioFiles)
     } catch (error) {
       console.error("Error al convertir texto a voz:", error)
-      alert('Ocurrió un error al convertir el texto a voz')
+      alert(error instanceof Error ? error.message : 'Ocurrió un error al convertir el texto a voz')
     } finally {
       setIsConvertLoading(false)
     }
   }
 
   const combineAudios = async () => {
-    if (audioFiles.length < 2) {
-      alert('Por favor, genere al menos dos audios para combinar')
+    if (conversation.trim() === '') {
+      alert('Por favor, ingrese algún texto en la conversación')
       return
     }
-  
+
     setIsCombining(true)
-  
+
     try {
-      const audioBuffers = await Promise.all(audioFiles.map(async (file) => {
+      let audiosToCombiné = audioFiles
+
+      if (audioFiles.length === 0) {
+        // Si no hay audios, primero convertimos el texto a voz
+        const newAudioFiles = await handleTextToVoiceConversion()
+        if (newAudioFiles.length === 0) {
+          throw new Error('No se pudo convertir el texto a voz')
+        }
+        audiosToCombiné = newAudioFiles
+      }
+
+      if (audiosToCombiné.length < 2) {
+        throw new Error('Se necesitan al menos dos audios para combinar')
+      }
+
+      const audioBuffers = await Promise.all(audiosToCombiné.map(async (file) => {
         const response = await fetch(file.url)
         const arrayBuffer = await response.arrayBuffer()
         return await audioContext.current.decodeAudioData(arrayBuffer)
       }))
-  
+
       const gapDuration = 0.8 // 0.8 seconds gap
       const gapSamples = Math.round(gapDuration * audioContext.current.sampleRate)
-  
+
       const totalSamples = audioBuffers.reduce((sum, buffer) => {
         return sum + buffer.length + gapSamples
       }, 0) - gapSamples // Subtract the last gap
-  
+
       const combinedBuffer = audioContext.current.createBuffer(
         1,
         totalSamples,
         audioContext.current.sampleRate
       )
-  
+
       const channelData = combinedBuffer.getChannelData(0)
-  
+
       let offset = 0
       audioBuffers.forEach((buffer, index) => {
         channelData.set(buffer.getChannelData(0), offset)
         offset += buffer.length
-  
+
         // Add gap after each audio except the last one
         if (index < audioBuffers.length - 1) {
           for (let i = 0; i < gapSamples; i++) {
@@ -160,34 +232,30 @@ export default function TextConverter() {
           offset += gapSamples
         }
       })
-  
+
       const blob = await new Promise(resolve => {
         const mediaStreamSource = audioContext.current.createMediaStreamDestination()
         const sourceNode = audioContext.current.createBufferSource()
         sourceNode.buffer = combinedBuffer
         sourceNode.connect(mediaStreamSource)
         sourceNode.start(0)
-  
+
         const mediaRecorder = new MediaRecorder(mediaStreamSource.stream)
         const chunks = []
-  
+
         mediaRecorder.ondataavailable = (e) => chunks.push(e.data)
         mediaRecorder.onstop = () => resolve(new Blob(chunks, { type: 'audio/mp3' }))
-  
+
         mediaRecorder.start()
         sourceNode.onended = () => mediaRecorder.stop()
       })
-  
+
       const url = URL.createObjectURL(blob)
-      const newAudioFile = { url, name: `Combinado_${audioFiles.length + 1}` }
-      setAudioFiles(prev => [...prev, newAudioFile])
-  
-      const audio = new Audio(url)
-      audio.playbackRate = playbackSpeed
-      audio.play()
+      const newAudioFile = { url, name: `Combinado_${audiosToCombiné.length}` }
+      setAudioFiles([newAudioFile]) // Solo mostramos el archivo combinado
     } catch (error) {
       console.error('Error combining audios:', error)
-      alert('Ocurrió un error al combinar los audios')
+      alert(error instanceof Error ? error.message : 'Ocurrió un error al combinar los audios')
     } finally {
       setIsCombining(false)
     }
@@ -196,18 +264,18 @@ export default function TextConverter() {
   const deleteAudio = (audioToDelete) => {
     setAudioFiles(prev => prev.filter(audio => audio !== audioToDelete))
     if (currentlyPlaying === audioToDelete) {
-      audioRef.current.pause()
+      audioRef.current?.pause()
       setCurrentlyPlaying(null)
     }
   }
 
   const togglePlayAudio = (audioFile) => {
     if (currentlyPlaying === audioFile) {
-      audioRef.current.pause()
+      audioRef.current?.pause()
       setCurrentlyPlaying(null)
     } else {
       if (currentlyPlaying) {
-        audioRef.current.pause()
+        audioRef.current?.pause()
       }
       audioRef.current = new Audio(audioFile.url)
       audioRef.current.playbackRate = playbackSpeed
@@ -225,111 +293,130 @@ export default function TextConverter() {
     document.body.removeChild(link)
   }
 
-  const handleSpeedChange = (e) => {
-    const newSpeed = parseFloat(e.target.value)
+  const handleSpeedChange = (value) => {
+    const newSpeed = value[0]
     setPlaybackSpeed(newSpeed)
     if (audioRef.current && !audioRef.current.paused) {
       audioRef.current.playbackRate = newSpeed
     }
   }
 
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.setSelectionRange(
+        textareaRef.current.value.length,
+        textareaRef.current.value.length
+      )
+    }
+  }, [conversation])
+
   return (
-    <div className="container mx-auto px-4 py-8 max-w-md">
-      <textarea
-        className="w-full p-3 border rounded-lg mb-4 resize-y text-sm"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder="Ingrese el texto aquí"
-        rows={4}
-      />
-      <div className="mb-4">
-        <select
-          className="w-full p-3 border rounded-lg text-sm"
-          value={selectedVoice}
-          onChange={(e) => setSelectedVoice(e.target.value)}
-        >
-          <option value="">Seleccione una voz</option>
-          {voices.map((voice) => (
-            <option key={voice.id} value={voice.id}>
-              {voice.name}
-            </option>
-          ))}
-        </select>
-      </div>
-      <button 
-        className={`w-full p-3 rounded-lg text-white mb-6 flex items-center justify-center text-sm ${isConvertLoading ? 'bg-gray-400' : 'bg-blue-500 active:bg-blue-600'}`}
-        onClick={handleTextToVoice}
-        disabled={isConvertLoading}
-      >
-        <Mic className="mr-2" size={18} />
-        {isConvertLoading ? 'Convirtiendo...' : 'Convertir'}
-      </button>
-      <div className="mb-4">
-        <label htmlFor="speed-control" className="block text-sm font-medium text-gray-700 mb-1">
-          Velocidad de reproducción: {playbackSpeed.toFixed(1)}x
-        </label>
-        <input
-          type="range"
-          id="speed-control"
-          min="0.5"
-          max="2"
-          step="0.1"
-          value={playbackSpeed}
-          onChange={handleSpeedChange}
-          className="w-full"
-        />
-      </div>
-      <h2 className="text-lg font-bold mb-3">Audios guardados:</h2>
-      <ul className="space-y-3 mb-6">
-        {audioFiles.map((file, index) => (
-          <li key={index} className="bg-white shadow rounded-lg overflow-hidden">
-            <div 
-              className="flex items-center justify-between p-3 cursor-pointer"
-              onClick={() => togglePlayAudio(file)}
-            >
-              <div className="flex items-center space-x-2 flex-grow">
-                {currentlyPlaying === file ? (
-                  <Pause size={18} className="text-blue-500" />
-                ) : (
-                  <Play size={18} className="text-gray-500" />
-                )}
-                <span className="text-xs truncate flex-grow">
-                  {file.name}
-                </span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <button 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    downloadAudio(file);
-                  }}
-                  className="p-2 text-green-500 rounded-full hover:bg-green-100"
-                  aria-label="Download"
-                >
-                  <Download size={18} />
-                </button>
-                <button 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    deleteAudio(file);
-                  }}
-                  className="p-2 text-red-500 rounded-full hover:bg-red-100"
-                  aria-label="Delete"
-                >
-                  <Trash2 size={18} />
-                </button>
-              </div>
+    <Card className="w-full max-w-2xl mx-auto">
+      <CardHeader>
+        <CardTitle>Conversación Grupal Avanzada con Conversión de Voz</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <Alert>
+          <InfoIcon className="h-4 w-4" />
+          <AlertTitle>Cómo usar</AlertTitle>
+          <AlertDescription>
+            Escribe cada línea de la conversación comenzando con el número de la persona que habla, seguido de dos puntos y un espacio. 
+            Por ejemplo: &quot;1: Hola, ¿cómo están todos?&quot;. Si no incluyes un número, se asignará automáticamente.
+          </AlertDescription>
+        </Alert>
+        <div className="space-y-2">
+          <Label htmlFor="participants">Número de participantes</Label>
+          <Input
+            id="participants"
+            type="number"
+            min="0"
+            value={participants}
+            onChange={handleParticipantsChange}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Selección de voces</Label>
+          {Array.from({ length: participants }).map((_, index) => (
+            <div key={index} className="flex items-center space-x-2">
+              <span className="w-20">Persona {index + 1}:</span>
+              <Select value={selectedVoices[index]} onValueChange={(value) => handleVoiceChange(value, index)}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Selecciona una voz" />
+                </SelectTrigger>
+                <SelectContent>
+                  {voices.map((voice) => (
+                    <SelectItem key={voice.id} value={voice.id}>
+                      {voice.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-          </li>
-        ))}
-      </ul>
-      <button 
-        className={`w-full p-3 rounded-lg text-white text-sm ${isCombining || audioFiles.length < 2 ? 'bg-gray-400' : 'bg-purple-500 active:bg-purple-600'}`}
-        onClick={combineAudios}
-        disabled={isCombining || audioFiles.length < 2}
-      >
-        {isCombining ? 'Combinando...' : 'Combinar Audios'}
-      </button>
-    </div>
+          ))}
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="conversation">Conversación</Label>
+          <Textarea
+            ref={textareaRef}
+            id="conversation"
+            placeholder="1: Hola, ¿cómo están todos?&#10;2: Muy bien, gracias. ¿Y tú?&#10;1: Excelente, gracias por preguntar."
+            value={conversation}
+            onChange={handleConversationChange}
+            onBlur={formatConversation}
+            rows={10}
+          />
+        </div>
+        <div className="flex space-x-2">
+          <Button onClick={handleTextToVoice} disabled={isConvertLoading}>
+            {isConvertLoading ? 'Convirtiendo...' : 'Convertir a Voz'}
+          </Button>
+          <Button onClick={combineAudios} disabled={isCombining || conversation.trim() === ''}>
+            {isCombining ? 'Procesando...' : 'Combinar y Convertir'}
+          </Button>
+        </div>
+        {audioFiles.length > 0 && (
+          <div className="space-y-2">
+            <Label>Audios generados</Label>
+            {audioFiles.map((audio, index) => (
+              <div key={index} className="flex items-center space-x-2">
+                <Button variant="outline" size="icon" onClick={() =>togglePlayAudio(audio)}>
+                  {currentlyPlaying === audio ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                </Button>
+                <span className="flex-grow">{audio.name}</span>
+                <Button variant="outline" size="icon" onClick={() => downloadAudio(audio)}>
+                  <Download className="h-4 w-4" />
+                </Button>
+                <Button variant="outline" size="icon" onClick={() => deleteAudio(audio)}>
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="space-y-2">
+          <Label htmlFor="playback-speed">Velocidad de reproducción: {playbackSpeed}x</Label>
+          <Slider
+            id="playback-speed"
+            min={0.5}
+            max={2}
+            step={0.1}
+            value={[playbackSpeed]}
+            onValueChange={handleSpeedChange}
+          />
+        </div>
+      </CardContent>
+      <CardFooter className="flex justify-between">
+        <div>
+          {participants > 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Participantes: {Array.from({ length: participants }, (_, i) => `Persona ${i + 1}`).join(', ')}
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground">No hay participantes seleccionados</p>
+          )}
+        </div>
+        <Button onClick={clearConversation}>Limpiar conversación</Button>
+      </CardFooter>
+    </Card>
   )
 }
