@@ -43,7 +43,7 @@ export default function Component() {
       method: 'GET',
       headers: {
         'Cartesia-Version': '2024-06-10',
-        'X-API-Key': '1d90ab17-fc05-4498-a634-08c5bd7f60ba'
+        'X-API-Key': '729651dc-c6c3-4ee5-97fa-350da1f88600'
       }
     }
 
@@ -99,7 +99,7 @@ export default function Component() {
       const response = await fetch("https://api.cartesia.ai/tts/bytes", {
         method: "POST",
         headers: {
-          "X-API-Key": "1d90ab17-fc05-4498-a634-08c5bd7f60ba",
+          "X-API-Key": "729651dc-c6c3-4ee5-97fa-350da1f88600",
           "Cartesia-Version": "2024-06-10",
           "Content-Type": "application/json"
         },
